@@ -40,6 +40,25 @@ export interface Itinerary {
   total_duration: string;
 }
 
+export interface CandidateEvent {
+  id: string;
+  title: string;
+  description: string;
+  start_time: string;
+  end_time: string | null;
+  address: string;
+  bezirk: string;
+  kiez: string | null;
+  event_type: string;
+  energy_score: number;
+  social_score: number;
+}
+
+export interface GenerateResult {
+  itinerary: Itinerary;
+  events: Record<string, CandidateEvent>;
+}
+
 export interface GenerateRequest {
   date: string;
   timeBlocks: ("morning" | "afternoon" | "evening")[];

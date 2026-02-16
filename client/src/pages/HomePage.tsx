@@ -53,8 +53,8 @@ export function HomePage() {
       socialScore: state.socialScore,
     });
     if (result) {
-      // Store itinerary in sessionStorage for the itinerary page
-      sessionStorage.setItem("itinerary", JSON.stringify(result));
+      // Store result (itinerary + events) in sessionStorage for the itinerary page
+      sessionStorage.setItem("generateResult", JSON.stringify(result));
       sessionStorage.setItem("plannerState", JSON.stringify(state));
       navigate("/itinerary");
     }

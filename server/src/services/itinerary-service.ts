@@ -80,7 +80,12 @@ async function queryCandidates(
   return rows;
 }
 
-export async function generate(req: GenerateRequest): Promise<Itinerary> {
+export interface GenerateResult {
+  itinerary: Itinerary;
+  events: Record<string, CandidateEvent>;
+}
+
+export async function generate(req: GenerateRequest): Promise<GenerateResult> {
   // Step 1: Filter events with progressive widening
   let candidates = await queryCandidates(req, req.bezirke, 1);
 
@@ -138,5 +143,13 @@ ${Object.entries(travelMap)
 `;
 
   // Step 4: Call Claude
-  return generateItinerary(userMessage);
+  const itinerary = await generateItinerary(userMessage);
+
+  // Build event lookup map for frontend enrichment
+  const events: Record<string, CandidateEvent> = {};
+  for (const c of candidates) {
+    events[c.id] = c;
+  }
+
+  return { itinerary, events };
 }

@@ -11,7 +11,7 @@ itineraryRouter.post(
   rateLimit,
   validate(generateRequestSchema),
   async (req, res) => {
-    const itinerary = await generate(req.body);
-    res.json(itinerary);
+    const result = await generate(req.body);
+    res.json(result);
   },
 );

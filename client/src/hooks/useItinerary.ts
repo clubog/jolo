@@ -1,9 +1,9 @@
 import { useState, useCallback } from "react";
-import type { Itinerary, GenerateRequest } from "../types";
+import type { GenerateRequest, GenerateResult } from "../types";
 import { generateItinerary } from "../api/itinerary";
 
 export function useItinerary() {
-  const [itinerary, setItinerary] = useState<Itinerary | null>(null);
+  const [result, setResult] = useState<GenerateResult | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -11,9 +11,9 @@ export function useItinerary() {
     setLoading(true);
     setError(null);
     try {
-      const result = await generateItinerary(req);
-      setItinerary(result);
-      return result;
+      const data = await generateItinerary(req);
+      setResult(data);
+      return data;
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Failed to generate";
       setError(msg);
@@ -24,9 +24,16 @@ export function useItinerary() {
   }, []);
 
   const clear = useCallback(() => {
-    setItinerary(null);
+    setResult(null);
     setError(null);
   }, []);
 
-  return { itinerary, loading, error, generate, clear };
+  return {
+    itinerary: result?.itinerary ?? null,
+    events: result?.events ?? {},
+    loading,
+    error,
+    generate,
+    clear,
+  };
 }

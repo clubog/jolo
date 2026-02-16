@@ -4,18 +4,18 @@ import { ItineraryView } from "../components/itinerary/ItineraryView";
 import { LoadingState } from "../components/itinerary/LoadingState";
 import { Button } from "../components/ui/Button";
 import { generateItinerary } from "../api/itinerary";
-import type { Itinerary, GenerateRequest } from "../types";
+import type { GenerateRequest, GenerateResult } from "../types";
 
 export function ItineraryPage() {
   const navigate = useNavigate();
-  const [itinerary, setItinerary] = useState<Itinerary | null>(null);
+  const [result, setResult] = useState<GenerateResult | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    const stored = sessionStorage.getItem("itinerary");
+    const stored = sessionStorage.getItem("generateResult");
     if (stored) {
-      setItinerary(JSON.parse(stored));
+      setResult(JSON.parse(stored));
     } else {
       navigate("/");
     }
@@ -37,9 +37,9 @@ export function ItineraryPage() {
     setLoading(true);
     setError(null);
     try {
-      const result = await generateItinerary(req);
-      setItinerary(result);
-      sessionStorage.setItem("itinerary", JSON.stringify(result));
+      const data = await generateItinerary(req);
+      setResult(data);
+      sessionStorage.setItem("generateResult", JSON.stringify(data));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to regenerate");
     } finally {
@@ -51,20 +51,20 @@ export function ItineraryPage() {
     if (navigator.share) {
       await navigator.share({
         title: "My Berlin Day Plan",
-        text: itinerary?.greeting || "Check out my Berlin day plan!",
+        text: result?.itinerary?.greeting || "Check out my Berlin day plan!",
         url: window.location.href,
       });
     }
   };
 
   if (loading) return <LoadingState />;
-  if (!itinerary) return null;
+  if (!result) return null;
 
   return (
     <div className="space-y-4">
       <h1 className="text-2xl font-bold text-center">Your Berlin Day</h1>
 
-      <ItineraryView itinerary={itinerary} />
+      <ItineraryView itinerary={result.itinerary} events={result.events} />
 
       {error && (
         <p className="text-sm text-red-500 text-center">{error}</p>
