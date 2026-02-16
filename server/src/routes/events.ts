@@ -15,7 +15,7 @@ eventsRouter.get("/", async (req, res) => {
 });
 
 eventsRouter.get("/:id", async (req, res) => {
-  const event = await eventService.getEvent(req.params.id);
+  const event = await eventService.getEvent(req.params.id as string);
   if (!event) throw ApiError.notFound("Event not found");
   res.json(event);
 });
@@ -26,13 +26,13 @@ eventsRouter.post("/", requireAdmin, validate(createEventSchema), async (req, re
 });
 
 eventsRouter.put("/:id", requireAdmin, validate(updateEventSchema), async (req, res) => {
-  const event = await eventService.updateEvent(req.params.id, req.body);
+  const event = await eventService.updateEvent(req.params.id as string, req.body);
   if (!event) throw ApiError.notFound("Event not found");
   res.json(event);
 });
 
 eventsRouter.delete("/:id", requireAdmin, async (req, res) => {
-  const event = await eventService.toggleActive(req.params.id);
+  const event = await eventService.toggleActive(req.params.id as string);
   if (!event) throw ApiError.notFound("Event not found");
   res.json(event);
 });
