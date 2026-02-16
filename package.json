@@ -1,0 +1,19 @@
+{
+  "name": "berlin-day-planner",
+  "private": true,
+  "scripts": {
+    "dev:server": "pnpm --filter server dev",
+    "dev:client": "pnpm --filter client dev",
+    "dev": "pnpm run --parallel dev:server dev:client",
+    "build:client": "pnpm --filter client build",
+    "build:server": "pnpm --filter server build",
+    "migrate": "pnpm --filter server migrate",
+    "seed": "pnpm --filter server seed",
+    "db:setup": "pnpm migrate && pnpm seed"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "esbuild"
+    ]
+  }
+}
