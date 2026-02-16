@@ -6,7 +6,7 @@ import { pool } from "./pool.js";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const migrationsDir = path.join(__dirname, "migrations");
 
-async function migrate() {
+export async function runMigrations() {
   const client = await pool.connect();
   try {
     await client.query(`
@@ -43,11 +43,15 @@ async function migrate() {
     throw err;
   } finally {
     client.release();
-    await pool.end();
   }
 }
 
-migrate().catch((err) => {
-  console.error("Migration failed:", err);
-  process.exit(1);
-});
+// Run directly as script
+if (process.argv[1]?.includes("migrate")) {
+  runMigrations()
+    .then(() => pool.end())
+    .catch((err) => {
+      console.error("Migration failed:", err);
+      process.exit(1);
+    });
+}
