@@ -77,7 +77,7 @@ export function ItineraryPage() {
         <Button onClick={() => navigate("/")} variant="ghost" className="flex-1">
           Start Over
         </Button>
-        {navigator.share && (
+        {"share" in navigator && (
           <Button onClick={handleShare} variant="ghost" size="sm">
             Share
           </Button>
