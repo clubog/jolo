@@ -1,4 +1,5 @@
 import { Router } from "express";
+import express from "express";
 import { requireAdmin } from "../middleware/auth.js";
 import { validate } from "../middleware/validate.js";
 import { ApiError } from "../types/common.js";
@@ -10,6 +11,9 @@ import {
 import * as eventService from "../services/event-service.js";
 
 export const importRouter = Router();
+
+// Large body limit for PDF imports (base64)
+importRouter.use(express.json({ limit: "10mb" }));
 
 // Parse input into event candidates
 importRouter.post("/parse", requireAdmin, validate(parseRequestSchema), async (req, res) => {

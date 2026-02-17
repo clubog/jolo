@@ -16,9 +16,10 @@ async function start() {
   // Auto-run migrations
   await runMigrations();
 
-  app.listen(config.PORT, "0.0.0.0", () => {
+  const server = app.listen(config.PORT, "0.0.0.0", () => {
     console.log(`Server running on 0.0.0.0:${config.PORT}`);
   });
+  server.setTimeout(30_000);
 }
 
 process.on("uncaughtException", (err) => {
