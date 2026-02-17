@@ -19,7 +19,11 @@ export function verifyToken(token: string): boolean {
 }
 
 export const requireAdmin: RequestHandler = (req, _res, next) => {
-  const token = req.cookies?.admin_token;
+  // Check cookie first, then Authorization header (for cross-origin)
+  const cookieToken = req.cookies?.admin_token;
+  const authHeader = req.headers.authorization;
+  const bearerToken = authHeader?.startsWith("Bearer ") ? authHeader.slice(7) : null;
+  const token = cookieToken || bearerToken;
   if (!token || !verifyToken(token)) {
     throw ApiError.unauthorized();
   }

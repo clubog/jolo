@@ -23,7 +23,7 @@ adminRouter.post("/login", (req, res) => {
     secure: isCrossOrigin,
   });
 
-  res.json({ ok: true });
+  res.json({ ok: true, token });
 });
 
 adminRouter.get("/stats", requireAdmin, async (_req, res) => {

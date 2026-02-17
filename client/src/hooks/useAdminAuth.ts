@@ -1,5 +1,5 @@
 import { useState, useCallback, createContext, useContext } from "react";
-import { adminLogin } from "../api/auth";
+import { adminLogin, adminLogout } from "../api/auth";
 
 interface AdminAuthState {
   isAuthenticated: boolean;
@@ -27,6 +27,7 @@ export function useAdminAuthProvider(): AdminAuthState {
   }, []);
 
   const logout = useCallback(() => {
+    adminLogout();
     setIsAuthenticated(false);
   }, []);
 
