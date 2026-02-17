@@ -58,6 +58,15 @@ Respond ONLY with valid JSON (no markdown fences, no explanation) in this format
 
 If no events can be extracted, return: { "events": [], "source_summary": "No events found in the input" }`;
 
+const CLASSIFY_SYSTEM_PROMPT = `You classify Berlin events. For each event, assign:
+- bezirk: one of ${BEZIRKE.join(", ")}. Infer from address/coordinates using Berlin geography.
+- event_type: one of ${EVENT_TYPES.join(", ")}. Infer from title/description.
+- energy_score: 1-5 (1=calm, 3=moderate, 5=intense)
+- social_score: 1-5 (1=solo, 3=medium group, 5=large crowd)
+
+Respond ONLY with valid JSON array (no markdown fences):
+[{ "index": 0, "bezirk": "...", "event_type": "...", "energy_score": 3, "social_score": 3 }, ...]`;
+
 export const parseRequestSchema = z.object({
   source_type: z.enum(["csv", "json", "text", "url", "pdf"]),
   content: z.string().min(1).max(500_000),
@@ -89,7 +98,6 @@ async function fetchUrl(url: string): Promise<string> {
   });
   if (!res.ok) throw new Error(`Failed to fetch URL: ${res.status}`);
   const html = await res.text();
-  // Strip HTML tags, keep text content
   return html
     .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, "")
     .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, "")
@@ -129,6 +137,134 @@ function buildMockResult(content: string): ParseResult {
   };
 }
 
+// ── Fast path: structured JSON with known fields ──
+function tryParseStructuredJson(content: string): ParsedEvent[] | null {
+  let arr: unknown[];
+  try {
+    const parsed = JSON.parse(content);
+    arr = Array.isArray(parsed) ? parsed : null!;
+  } catch {
+    return null;
+  }
+  if (!arr || arr.length === 0) return null;
+
+  // Check if entries have recognizable fields (start_date or date, title)
+  const first = arr[0] as Record<string, unknown>;
+  if (!first.title || (!first.start_date && !first.date)) return null;
+
+  return arr.map((raw) => {
+    const e = raw as Record<string, unknown>;
+
+    // Parse date/time from ISO or date string
+    let date = "";
+    let startTime = "12:00";
+    let endTime: string | undefined;
+
+    if (e.start_date && typeof e.start_date === "string") {
+      const d = new Date(e.start_date);
+      date = d.toISOString().slice(0, 10);
+      startTime = d.toISOString().slice(11, 16);
+    } else if (e.date && typeof e.date === "string") {
+      date = String(e.date).slice(0, 10);
+    }
+
+    if (e.end_date && typeof e.end_date === "string") {
+      endTime = new Date(e.end_date).toISOString().slice(11, 16);
+    } else if (e.end_time && typeof e.end_time === "string") {
+      endTime = String(e.end_time).slice(0, 5);
+    }
+
+    if (e.start_time && typeof e.start_time === "string") {
+      startTime = String(e.start_time).slice(0, 5);
+    }
+
+    // Build address from available fields
+    const address = String(
+      e.full_address || e.address || e.venue_name || "Berlin",
+    ).replace(/,\s*Germany$/i, "");
+
+    return {
+      title: String(e.title || "Unknown Event"),
+      description: e.description ? String(e.description).slice(0, 1000) : undefined,
+      date,
+      start_time: startTime,
+      end_time: endTime,
+      address: address || "Berlin",
+      bezirk: "Mitte", // placeholder — classified by Claude or user
+      event_type: "Community", // placeholder — classified by Claude or user
+      energy_score: 3,
+      social_score: 3,
+      latitude: typeof e.latitude === "number" ? e.latitude : undefined,
+      longitude: typeof e.longitude === "number" ? e.longitude : undefined,
+      source: e.platform ? String(e.platform) : "import",
+      url: e.url ? String(e.url) : undefined,
+      _include: true,
+      _confidence: "medium" as const,
+      _notes: "",
+    };
+  });
+}
+
+// Use Claude to classify events in a batch (bezirk, type, scores)
+async function classifyEvents(events: ParsedEvent[]): Promise<ParsedEvent[]> {
+  if (IS_MOCK || !client || events.length === 0) return events;
+
+  // Build a compact summary for classification
+  const summary = events.map((e, i) => ({
+    index: i,
+    title: e.title,
+    address: e.address,
+    lat: e.latitude,
+    lng: e.longitude,
+    description: (e.description || "").slice(0, 100),
+  }));
+
+  // Process in batches of 20 to avoid timeouts
+  const BATCH_SIZE = 20;
+  const classified = [...events];
+
+  for (let start = 0; start < summary.length; start += BATCH_SIZE) {
+    const batch = summary.slice(start, start + BATCH_SIZE);
+
+    try {
+      const response = await client.messages.create({
+        model: "claude-sonnet-4-20250514",
+        max_tokens: 2048,
+        system: CLASSIFY_SYSTEM_PROMPT,
+        messages: [{
+          role: "user",
+          content: `Classify these ${batch.length} Berlin events:\n${JSON.stringify(batch)}`,
+        }],
+      });
+
+      const text = response.content[0].type === "text" ? response.content[0].text : "[]";
+      const results = JSON.parse(text) as {
+        index: number;
+        bezirk: string;
+        event_type: string;
+        energy_score: number;
+        social_score: number;
+      }[];
+
+      for (const r of results) {
+        const globalIndex = start + r.index;
+        if (globalIndex < classified.length) {
+          if (BEZIRKE.includes(r.bezirk)) classified[globalIndex].bezirk = r.bezirk;
+          if (EVENT_TYPES.includes(r.event_type)) classified[globalIndex].event_type = r.event_type;
+          if (r.energy_score >= 1 && r.energy_score <= 5) classified[globalIndex].energy_score = r.energy_score;
+          if (r.social_score >= 1 && r.social_score <= 5) classified[globalIndex].social_score = r.social_score;
+          classified[globalIndex]._confidence = "high";
+        }
+      }
+    } catch (err) {
+      console.error(`Classification batch failed (offset ${start}):`, err);
+      // Keep defaults — user can fix in review step
+    }
+  }
+
+  return classified;
+}
+
 export async function parseImportContent(req: ParseRequest): Promise<ParseResult> {
   let textContent = req.content;
   const isPdf = req.source_type === "pdf";
@@ -143,11 +279,23 @@ export async function parseImportContent(req: ParseRequest): Promise<ParseResult
     return buildMockResult(textContent);
   }
 
-  // Build the message content
+  // Fast path: structured JSON — map fields directly, classify with Claude
+  if (req.source_type === "json") {
+    const directEvents = tryParseStructuredJson(textContent);
+    if (directEvents && directEvents.length > 0) {
+      console.log(`Fast path: mapped ${directEvents.length} structured JSON events`);
+      const classified = await classifyEvents(directEvents);
+      return {
+        events: classified,
+        source_summary: `Mapped ${classified.length} events from structured JSON`,
+      };
+    }
+  }
+
+  // Full Claude parse for unstructured content (text, CSV, URL, PDF)
   const userContent: Anthropic.Messages.ContentBlockParam[] = [];
 
   if (isPdf) {
-    // PDF: send as document content block (base64)
     userContent.push({
       type: "document",
       source: {
@@ -183,11 +331,9 @@ export async function parseImportContent(req: ParseRequest): Promise<ParseResult
     throw new Error("Failed to parse Claude response as JSON");
   }
 
-  // Validate and coerce each event, keeping _include/_confidence/_notes
   const events: ParsedEvent[] = [];
   for (const raw of parsed.events) {
     const obj = raw as Record<string, unknown>;
-    // Set defaults for optional fields
     obj._include = obj._include ?? true;
     obj._confidence = obj._confidence ?? "medium";
     obj._notes = obj._notes ?? "";
@@ -197,7 +343,6 @@ export async function parseImportContent(req: ParseRequest): Promise<ParseResult
     if (result.success) {
       events.push(result.data);
     } else {
-      // Try to include with relaxed validation — keep the raw data with notes
       events.push({
         title: String(obj.title || "Unknown Event"),
         date: String(obj.date || new Date().toISOString().slice(0, 10)),
