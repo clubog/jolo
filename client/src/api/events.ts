@@ -37,6 +37,6 @@ export function parseImport(data: {
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function saveImport(data: {
   events: any[];
-}): Promise<{ inserted: number; failed: { index: number; error: string }[] }> {
+}): Promise<{ inserted: number; drafts: number; failed: { index: number; error: string }[] }> {
   return api.post("/api/admin/import/save", data);
 }

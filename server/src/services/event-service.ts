@@ -62,6 +62,20 @@ export async function createEvent(data: CreateEvent) {
   return rows[0];
 }
 
+export async function createEventAsDraft(data: CreateEvent) {
+  const { rows } = await pool.query(
+    `INSERT INTO events (title, description, date, start_time, end_time, address, bezirk, kiez,
+       latitude, longitude, event_type, energy_score, social_score, source, url, is_active)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,false) RETURNING *`,
+    [
+      data.title, data.description, data.date, data.start_time, data.end_time,
+      data.address, data.bezirk, data.kiez, data.latitude, data.longitude,
+      data.event_type, data.energy_score, data.social_score, data.source, data.url,
+    ],
+  );
+  return rows[0];
+}
+
 export async function updateEvent(id: string, data: UpdateEvent) {
   const fields: string[] = [];
   const params: unknown[] = [];

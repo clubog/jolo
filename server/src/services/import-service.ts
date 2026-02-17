@@ -79,7 +79,7 @@ export interface ParseResult {
 }
 
 export const saveRequestSchema = z.object({
-  events: z.array(createEventSchema).min(1).max(100),
+  events: z.array(z.record(z.unknown())).min(1).max(500),
 });
 
 async function fetchUrl(url: string): Promise<string> {
@@ -147,20 +147,36 @@ function tryParseStructuredJson(content: string): ParsedEvent[] | null {
     const e = raw as Record<string, unknown>;
 
     // Parse date/time from ISO or date string
-    let date = "";
+    const today = new Date().toISOString().slice(0, 10);
+    let date = today;
     let startTime = "12:00";
     let endTime: string | undefined;
+    const notes: string[] = [];
 
     if (e.start_date && typeof e.start_date === "string") {
       const d = new Date(e.start_date);
-      date = d.toISOString().slice(0, 10);
-      startTime = d.toISOString().slice(11, 16);
+      if (!isNaN(d.getTime())) {
+        date = d.toISOString().slice(0, 10);
+        startTime = d.toISOString().slice(11, 16);
+      } else {
+        notes.push("Invalid start_date, using today");
+      }
     } else if (e.date && typeof e.date === "string") {
-      date = String(e.date).slice(0, 10);
+      const match = String(e.date).match(/\d{4}-\d{2}-\d{2}/);
+      if (match) {
+        date = match[0];
+      } else {
+        notes.push("Invalid date format, using today");
+      }
+    } else {
+      notes.push("No date found, using today");
     }
 
     if (e.end_date && typeof e.end_date === "string") {
-      endTime = new Date(e.end_date).toISOString().slice(11, 16);
+      const d = new Date(e.end_date);
+      if (!isNaN(d.getTime())) {
+        endTime = d.toISOString().slice(11, 16);
+      }
     } else if (e.end_time && typeof e.end_time === "string") {
       endTime = String(e.end_time).slice(0, 5);
     }
@@ -191,7 +207,7 @@ function tryParseStructuredJson(content: string): ParsedEvent[] | null {
       url: e.url ? String(e.url) : undefined,
       _include: true,
       _confidence: "medium" as const,
-      _notes: "",
+      _notes: notes.join("; "),
     };
   });
 }

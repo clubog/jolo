@@ -53,7 +53,7 @@ export function EventImport({ onDone }: Props) {
   const [events, setEvents] = useState<ParsedEvent[]>([]);
   const [summary, setSummary] = useState("");
   const [error, setError] = useState<string | null>(null);
-  const [saveResult, setSaveResult] = useState<{ inserted: number; failed: number } | null>(null);
+  const [saveResult, setSaveResult] = useState<{ inserted: number; drafts: number; failed: number } | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -115,7 +115,7 @@ export function EventImport({ onDone }: Props) {
     setError(null);
     try {
       const result = await saveImport({ events: toSave });
-      setSaveResult({ inserted: result.inserted, failed: result.failed.length });
+      setSaveResult({ inserted: result.inserted, drafts: result.drafts || 0, failed: result.failed.length });
       setStep("done");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to save");
@@ -412,6 +412,7 @@ export function EventImport({ onDone }: Props) {
       {saveResult && (
         <p className="text-sm text-text-light">
           {saveResult.inserted} event{saveResult.inserted !== 1 ? "s" : ""} imported
+          {saveResult.drafts > 0 && `, ${saveResult.drafts} saved as draft`}
           {saveResult.failed > 0 && `, ${saveResult.failed} failed`}
         </p>
       )}
