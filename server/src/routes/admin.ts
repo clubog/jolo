@@ -15,12 +15,12 @@ adminRouter.post("/login", (req, res) => {
   }
 
   const token = signToken("admin:" + Date.now());
-  const isProduction = process.env.NODE_ENV === "production";
+  const isCrossOrigin = !config.CORS_ORIGIN.includes("localhost");
   res.cookie("admin_token", token, {
     httpOnly: true,
-    sameSite: isProduction ? "none" : "lax",
+    sameSite: isCrossOrigin ? "none" : "lax",
     maxAge: 24 * 60 * 60 * 1000, // 1 day
-    secure: isProduction,
+    secure: isCrossOrigin,
   });
 
   res.json({ ok: true });
