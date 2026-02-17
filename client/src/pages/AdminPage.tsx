@@ -3,11 +3,12 @@ import { LoginForm } from "../components/admin/LoginForm";
 import { Dashboard } from "../components/admin/Dashboard";
 import { EventTable } from "../components/admin/EventTable";
 import { EventForm } from "../components/admin/EventForm";
+import { EventImport } from "../components/admin/EventImport";
 import { Button } from "../components/ui/Button";
 import { useAdminAuth } from "../hooks/useAdminAuth";
 import type { Event } from "../types";
 
-type View = "dashboard" | "events" | "form";
+type View = "dashboard" | "events" | "form" | "import";
 
 export function AdminPage() {
   const { isAuthenticated, logout } = useAdminAuth();
@@ -43,6 +44,13 @@ export function AdminPage() {
         </Button>
         <Button
           size="sm"
+          variant={view === "import" ? "primary" : "secondary"}
+          onClick={() => setView("import")}
+        >
+          Import
+        </Button>
+        <Button
+          size="sm"
           variant="secondary"
           onClick={() => {
             setEditingEvent(null);
@@ -61,6 +69,9 @@ export function AdminPage() {
             setView("form");
           }}
         />
+      )}
+      {view === "import" && (
+        <EventImport onDone={() => setView("events")} />
       )}
       {view === "form" && (
         <EventForm

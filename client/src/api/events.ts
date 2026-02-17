@@ -25,3 +25,18 @@ export function toggleEvent(id: string): Promise<Event> {
 export function getStats(): Promise<AdminStats> {
   return api.get("/api/admin/stats");
 }
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function parseImport(data: {
+  source_type: string;
+  content: string;
+}): Promise<{ events: any[]; source_summary: string }> {
+  return api.post("/api/admin/import/parse", data);
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function saveImport(data: {
+  events: any[];
+}): Promise<{ inserted: number; failed: { index: number; error: string }[] }> {
+  return api.post("/api/admin/import/save", data);
+}
