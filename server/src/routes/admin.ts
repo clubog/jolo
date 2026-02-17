@@ -15,11 +15,12 @@ adminRouter.post("/login", (req, res) => {
   }
 
   const token = signToken("admin:" + Date.now());
+  const isProduction = process.env.NODE_ENV === "production";
   res.cookie("admin_token", token, {
     httpOnly: true,
-    sameSite: "lax",
+    sameSite: isProduction ? "none" : "lax",
     maxAge: 24 * 60 * 60 * 1000, // 1 day
-    secure: process.env.NODE_ENV === "production",
+    secure: isProduction,
   });
 
   res.json({ ok: true });

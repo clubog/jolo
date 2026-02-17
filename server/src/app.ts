@@ -17,10 +17,10 @@ app.use(cors({ origin: config.CORS_ORIGIN, credentials: true }));
 app.use(express.json({ limit: "10mb" }));
 app.use(cookieParser());
 
+app.use("/api/admin/import", importRouter);
 app.use("/api/admin", adminRouter);
 app.use("/api/events", eventsRouter);
 app.use("/api/itinerary", itineraryRouter);
-app.use("/api/admin/import", importRouter);
 app.use("/api", referenceRouter);
 
 app.get("/api/health", (_req, res) => {
