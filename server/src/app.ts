@@ -14,8 +14,8 @@ export const app = express();
 app.set("trust proxy", 1);
 
 app.use(cors({ origin: config.CORS_ORIGIN, credentials: true }));
-app.use(express.json({ limit: "10mb" }));
 app.use(cookieParser());
+app.use(express.json({ limit: "10mb" }));
 
 app.use("/api/admin/import", importRouter);
 app.use("/api/admin", adminRouter);
