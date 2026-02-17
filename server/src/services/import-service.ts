@@ -58,15 +58,6 @@ Respond ONLY with valid JSON (no markdown fences, no explanation) in this format
 
 If no events can be extracted, return: { "events": [], "source_summary": "No events found in the input" }`;
 
-const CLASSIFY_SYSTEM_PROMPT = `You classify Berlin events. For each event, assign:
-- bezirk: one of ${BEZIRKE.join(", ")}. Infer from address/coordinates using Berlin geography.
-- event_type: one of ${EVENT_TYPES.join(", ")}. Infer from title/description.
-- energy_score: 1-5 (1=calm, 3=moderate, 5=intense)
-- social_score: 1-5 (1=solo, 3=medium group, 5=large crowd)
-
-Respond ONLY with valid JSON array (no markdown fences):
-[{ "index": 0, "bezirk": "...", "event_type": "...", "energy_score": 3, "social_score": 3 }, ...]`;
-
 export const parseRequestSchema = z.object({
   source_type: z.enum(["csv", "json", "text", "url", "pdf"]),
   content: z.string().min(1).max(500_000),
@@ -190,8 +181,8 @@ function tryParseStructuredJson(content: string): ParsedEvent[] | null {
       start_time: startTime,
       end_time: endTime,
       address: address || "Berlin",
-      bezirk: "Mitte", // placeholder — classified by Claude or user
-      event_type: "Community", // placeholder — classified by Claude or user
+      bezirk: inferBezirk(e),
+      event_type: inferEventType(String(e.title || ""), String(e.description || "")),
       energy_score: 3,
       social_score: 3,
       latitude: typeof e.latitude === "number" ? e.latitude : undefined,
@@ -205,69 +196,109 @@ function tryParseStructuredJson(content: string): ParsedEvent[] | null {
   });
 }
 
-// Use Claude to classify events in a batch (bezirk, type, scores)
-async function classifyEvents(events: ParsedEvent[]): Promise<ParsedEvent[]> {
-  if (IS_MOCK || !client || events.length === 0) return events;
+// ── Local heuristic classification (no API calls) ──
 
-  // Build a compact summary for classification
-  const summary = events.map((e, i) => ({
-    index: i,
-    title: e.title,
-    address: e.address,
-    lat: e.latitude,
-    lng: e.longitude,
-    description: (e.description || "").slice(0, 100),
-  }));
+// Approximate Berlin bezirk boundaries by lat/lng
+const BEZIRK_COORDS: { name: string; lat: number; lng: number }[] = [
+  { name: "Mitte", lat: 52.520, lng: 13.405 },
+  { name: "Kreuzberg", lat: 52.489, lng: 13.403 },
+  { name: "Friedrichshain", lat: 52.516, lng: 13.454 },
+  { name: "Neukölln", lat: 52.476, lng: 13.437 },
+  { name: "Prenzlauer Berg", lat: 52.539, lng: 13.424 },
+  { name: "Charlottenburg", lat: 52.516, lng: 13.304 },
+  { name: "Schöneberg", lat: 52.484, lng: 13.349 },
+  { name: "Wilmersdorf", lat: 52.487, lng: 13.318 },
+  { name: "Treptow-Köpenick", lat: 52.459, lng: 13.498 },
+  { name: "Pankow", lat: 52.568, lng: 13.413 },
+];
 
-  // Process in batches of 20 to avoid timeouts
-  const BATCH_SIZE = 20;
-  const classified = [...events];
+// Address substrings that hint at a bezirk
+const BEZIRK_ADDRESS_HINTS: Record<string, string[]> = {
+  "Kreuzberg": ["kreuzberg", "kottbuss", "oranien", "skalitz", "görlitz", "bergmann", "graefe", "10997", "10999", "10961", "10963"],
+  "Neukölln": ["neukölln", "sonnenallee", "hermannstr", "karl-marx-str", "weserstr", "richardstr", "12043", "12045", "12047", "12049", "12051", "12053", "12055"],
+  "Friedrichshain": ["friedrichshain", "simon-dach", "boxhagener", "warschauer", "revaler", "raw ", "10243", "10245"],
+  "Mitte": ["mitte", "alexanderplatz", "hackescher", "torstr", "rosenthaler", "unter den linden", "friedrichstr", "10115", "10117", "10119", "10178", "10179"],
+  "Prenzlauer Berg": ["prenzlauer", "kastanienallee", "schönhauser", "stargarder", "helmholtz", "kollwitz", "mauerpark", "10405", "10407", "10409", "10435", "10437", "10439"],
+  "Charlottenburg": ["charlottenburg", "savignyplatz", "kantstr", "kurfürstendamm", "ku'damm", "wilmersdorfer", "10585", "10587", "10589", "10623", "10625", "10627", "10629"],
+  "Schöneberg": ["schöneberg", "nollendorf", "winterfeldt", "akazien", "goltzstr", "10777", "10779", "10781", "10783", "10785", "10787", "10789"],
+  "Wilmersdorf": ["wilmersdorf", "ludwigkirch", "uhlandstr", "bundesplatz", "10707", "10709", "10711", "10713", "10715", "10717", "10719"],
+  "Pankow": ["pankow", "florastr", "wollankstr", "13187", "13189"],
+  "Treptow-Köpenick": ["treptow", "köpenick", "oberschöneweide", "12435", "12437", "12439"],
+};
 
-  for (let start = 0; start < summary.length; start += BATCH_SIZE) {
-    const batch = summary.slice(start, start + BATCH_SIZE);
+function inferBezirk(e: Record<string, unknown>): string {
+  // Try address hints first
+  const addr = String(e.full_address || e.address || "").toLowerCase();
+  for (const [bezirk, hints] of Object.entries(BEZIRK_ADDRESS_HINTS)) {
+    if (hints.some((h) => addr.includes(h))) return bezirk;
+  }
 
-    try {
-      const response = await client.messages.create({
-        model: "claude-sonnet-4-20250514",
-        max_tokens: 2048,
-        system: CLASSIFY_SYSTEM_PROMPT,
-        messages: [{
-          role: "user",
-          content: `Classify these ${batch.length} Berlin events:\n${JSON.stringify(batch)}`,
-        }],
-      });
-
-      const text = response.content[0].type === "text" ? response.content[0].text : "[]";
-      const results = JSON.parse(text) as {
-        index: number;
-        bezirk: string;
-        event_type: string;
-        energy_score: number;
-        social_score: number;
-      }[];
-
-      for (const r of results) {
-        const globalIndex = start + r.index;
-        if (globalIndex < classified.length) {
-          if (BEZIRKE.includes(r.bezirk)) classified[globalIndex].bezirk = r.bezirk;
-          if (EVENT_TYPES.includes(r.event_type)) classified[globalIndex].event_type = r.event_type;
-          if (r.energy_score >= 1 && r.energy_score <= 5) classified[globalIndex].energy_score = r.energy_score;
-          if (r.social_score >= 1 && r.social_score <= 5) classified[globalIndex].social_score = r.social_score;
-          classified[globalIndex]._confidence = "high";
-        }
+  // Fall back to nearest coordinates
+  const lat = typeof e.latitude === "number" ? e.latitude : null;
+  const lng = typeof e.longitude === "number" ? e.longitude : null;
+  if (lat && lng) {
+    let nearest = "Mitte";
+    let minDist = Infinity;
+    for (const b of BEZIRK_COORDS) {
+      const dist = (b.lat - lat) ** 2 + (b.lng - lng) ** 2;
+      if (dist < minDist) {
+        minDist = dist;
+        nearest = b.name;
       }
-    } catch (err) {
-      console.error(`Classification batch failed (offset ${start}):`, err);
-      // Keep defaults — user can fix in review step
+    }
+    return nearest;
+  }
+
+  return "Mitte";
+}
+
+const TYPE_KEYWORDS: Record<string, string[]> = {
+  "Music & Nightlife": ["music", "concert", "dj", "jazz", "techno", "club", "party", "nightlife", "band", "live music", "open mic", "karaoke", "rave"],
+  "Food & Drink": ["food", "drink", "dinner", "brunch", "lunch", "breakfast", "coffee", "beer", "wine", "cocktail", "restaurant", "cooking", "tasting", "culinary", "supper"],
+  "Arts & Culture": ["art", "gallery", "museum", "exhibition", "film", "cinema", "theater", "theatre", "poetry", "paint", "photo", "culture", "screening", "colourist"],
+  "Fitness/Sports": ["fitness", "sport", "run", "yoga", "gym", "workout", "boxing", "cycling", "swim", "basketball", "football", "soccer", "volleyball", "marathon"],
+  "Networking": ["network", "founder", "startup", "entrepreneur", "investor", "pitch", "business", "professional", "career", "hiring", "recruiting", "demo day", "fireside", "e-commerce", "saas", "b2b"],
+  "Workshops": ["workshop", "class", "learn", "hands-on", "masterclass", "tutorial", "bootcamp", "course", "training", "craft", "making"],
+  "Wellness": ["wellness", "meditation", "mindful", "breathwork", "healing", "spa", "retreat", "therapy", "holistic", "cacao", "sound bath", "longevity", "biohack"],
+  "Community": ["community", "meetup", "meet-up", "social", "hangout", "gathering", "volunteer", "book club", "language exchange", "board game", "pub quiz"],
+  "Outdoors": ["outdoor", "hike", "park", "garden", "nature", "picnic", "bike", "walk", "tour", "forest"],
+  "Shopping & Markets": ["market", "flea", "vintage", "shop", "fair", "bazaar", "swap", "pop-up market"],
+};
+
+function inferEventType(title: string, description: string): string {
+  const text = `${title} ${description}`.toLowerCase();
+  let bestType = "Community";
+  let bestScore = 0;
+
+  for (const [type, keywords] of Object.entries(TYPE_KEYWORDS)) {
+    let score = 0;
+    for (const kw of keywords) {
+      if (text.includes(kw)) score++;
+    }
+    if (score > bestScore) {
+      bestScore = score;
+      bestType = type;
     }
   }
 
-  return classified;
+  return bestType;
 }
 
 export async function parseImportContent(req: ParseRequest): Promise<ParseResult> {
   let textContent = req.content;
   const isPdf = req.source_type === "pdf";
+
+  // Fast path: structured JSON — no API calls needed
+  if (req.source_type === "json") {
+    const directEvents = tryParseStructuredJson(textContent);
+    if (directEvents && directEvents.length > 0) {
+      console.log(`Fast path: mapped ${directEvents.length} structured JSON events`);
+      return {
+        events: directEvents,
+        source_summary: `Mapped ${directEvents.length} events from structured JSON`,
+      };
+    }
+  }
 
   // For URLs, fetch the page content
   if (req.source_type === "url") {
@@ -277,19 +308,6 @@ export async function parseImportContent(req: ParseRequest): Promise<ParseResult
   if (IS_MOCK || !client) {
     console.log("Using mock import parser (no API key configured)");
     return buildMockResult(textContent);
-  }
-
-  // Fast path: structured JSON — map fields directly, classify with Claude
-  if (req.source_type === "json") {
-    const directEvents = tryParseStructuredJson(textContent);
-    if (directEvents && directEvents.length > 0) {
-      console.log(`Fast path: mapped ${directEvents.length} structured JSON events`);
-      const classified = await classifyEvents(directEvents);
-      return {
-        events: classified,
-        source_summary: `Mapped ${classified.length} events from structured JSON`,
-      };
-    }
   }
 
   // Full Claude parse for unstructured content (text, CSV, URL, PDF)
