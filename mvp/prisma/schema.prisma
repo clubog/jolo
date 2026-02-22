@@ -1,0 +1,43 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = "file:./dev.db"
+}
+
+model Event {
+  id              String    @id @default(cuid())
+  title           String
+  date            String    // YYYY-MM-DD
+  startTime       String?   // HH:MM
+  endTime         String?   // HH:MM
+  district        String?
+  venue           String?
+  category        String    // tech|art|music|club|community|workshop|film|other
+  subtags         String    @default("[]") // JSON array
+  priceEurMin     Float?
+  priceEurMax     Float?
+  socialDensity   Float     @default(0.5) // 0..1
+  socialOpenness  Float     @default(0.5) // 0..1
+  energyLevel     Float     @default(0.5) // 0..1
+  crowdVector     String    @default("{}") // JSON {founders,investors,artists,tourists} 0..1
+  accessDifficulty Float    @default(0.3) // 0..1
+  source          String?
+  sourceUrl       String?
+  isActive        Boolean   @default(true)
+  createdAt       DateTime  @default(now())
+  feedbacks       Feedback[]
+}
+
+model Feedback {
+  id        String   @id @default(cuid())
+  sessionId String
+  eventId   String
+  event     Event    @relation(fields: [eventId], references: [id])
+  action    String   // SAVE | HIDE
+  createdAt DateTime @default(now())
+
+  @@unique([sessionId, eventId])
+}
